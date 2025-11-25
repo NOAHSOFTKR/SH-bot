@@ -1,0 +1,55 @@
+name: Discord Notification on Push
+
+on:
+  push:
+    branches:
+      - main # 변경 사항을 감지할 브랜치 (예: master 또는 main)
+    paths:
+      - 'Team of service.md' # 약관 파일 경로를 여기에 정확히 입력 (예: 'docs/TOS.md')
+      - 'PrivacyPolicy.md'
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }} # GitHub Secrets에 웹훅 URL 저장
+        run: |
+          # GitHub의 기본 페이로드를 Discord 웹훅 형식에 맞춰 변환하여 전송
+          # JQ를 사용하여 JSON 파싱 및 생성
+          # 메시지 내용을 원하는대로 커스터마이징 가능
+          COMMIT_MESSAGE=$(jq -r '.head_commit.message' "$GITHUB_EVENT_PATH")
+          COMMIT_URL=$(jq -r '.head_commit.url' "$GITHUB_EVENT_PATH")
+          REPOSITORY_NAME=$(jq -r '.repository.full_name' "$GITHUB_EVENT_PATH")
+          PUSHER_NAME=$(jq -r '.pusher.name' "$GITHUB_EVENT_PATH")
+
+          if [ "$COMMIT_MESSAGE" = "null" ]; then
+            COMMIT_MESSAGE="새로운 변경사항이 푸시되었습니다."
+          fi
+
+          # Discord 웹훅 페이로드 구성
+          json_payload=$(jq -n \
+            --arg content "🔔약관 문서가 변경되었습니다." \
+            --arg title "$COMMIT_MESSAGE" \
+            --arg url "$COMMIT_URL" \
+            --arg description "**${PUSHER_NAME}** 이/가 업데이트했어요" \
+            --argjson color 5814783 \
+            '{
+              content: $content,
+              embeds: [
+                {
+                  title: $title,
+                  url: $url,
+                  description: $description,
+                  color: $color
+                }
+              ]
+            }'
+          )
+
+          # Discord 웹훅으로 전송
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "$json_payload" \
+               "$DISCORD_WEBHOOK"
